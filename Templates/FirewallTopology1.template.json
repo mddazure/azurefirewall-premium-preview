@@ -1,0 +1,496 @@
+{
+	"$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+		"remoteAccessAddressPrefix": {
+            "type": "string",
+            "metadata": {
+                "description": "IP Address with allowed to access the setup remotely. For example 8.8.8.8/32"
+            }
+        },
+		"vmSize": {
+			"type": "string",
+			"defaultValue": "Standard_B2s",
+			"metadata": {
+                "description": "Size of virtual machine sizes"
+            }
+		},
+		"remoteAccessUsername": {
+			"type": "string",
+			"defaultValue": "AzureUser",
+			"metadata": {
+                "description": "Username to access created VMs remotely"
+            }
+		},
+		"remoteAccessPassword": {
+			"type": "securestring",
+			"metadata": {
+				"description": "Password for remote access"
+			}
+		}
+	},
+	"variables": {
+		"vnetAddressSpace": "10.0.0.0/16",
+		"firewallAddressSpace": "10.0.100.0/24",
+		"firewallPrivateIPAddress": "10.0.100.4",
+		"workerAddressSpace": "10.0.10.0/24",
+		"workerPrivateIPAddress": "10.0.10.10",
+		"serverAddressSpace": "10.0.20.0/24",
+		"serverPrivateIPAddress": "10.0.20.10",
+		"keyVaultName": "[concat('fw-premium-', uniqueString(resourceGroup().id))]",
+		"location": "[resourceGroup().location]",
+		"policyLocation": "[variables('location')]"
+	},
+	"resources": [
+		{
+			"apiVersion": "2020-05-01",
+			"type": "Microsoft.Network/routeTables",
+			"name": "WorkerRoute",
+			"location": "[variables('location')]",
+			"properties": {
+				"routes": [
+					{
+						"name": "WorkerRouteFirewall",
+						"properties": {
+							"addressPrefix": "0.0.0.0/0",
+							"nextHopType": "VirtualAppliance",
+							"nextHopIpAddress": "[variables('firewallPrivateIPAddress')]"
+						}
+					},
+					{
+						"name": "WorkerToServerRouteFirewall",
+						"properties": {
+							"addressPrefix": "[variables('serverAddressSpace')]",
+							"nextHopType": "VirtualAppliance",
+							"nextHopIpAddress": "[variables('firewallPrivateIPAddress')]"
+						}
+					},
+					{
+						"name": "WorkerRouteRemoteAccess",
+						"properties": {
+							"addressPrefix": "[parameters('remoteAccessAddressPrefix')]",
+							"nextHopType": "Internet"
+						}
+					}
+				],
+				"disableBgpRoutePropagation": "false"
+			}
+		},
+		{
+			"apiVersion": "2020-05-01",
+			"type": "Microsoft.Network/networkSecurityGroups",
+			"name": "WorkerNSG",
+			"location": "[variables('location')]",
+			"properties": {
+				"securityRules": [
+					{
+						"name": "AllowRemoteAccess",
+						"properties": {
+							"description": "AllowRemoteAccess",
+							"protocol": "Tcp",
+							"sourcePortRange": "*",
+							"sourceAddressPrefix": "[parameters('remoteAccessAddressPrefix')]",
+							"destinationPortRanges": ["22", "3389"],
+							"destinationAddressPrefix": "*",
+							"access": "Allow",
+							"priority": 100,
+							"direction": "Inbound"
+						}
+					}
+				]
+			}
+		},
+		{
+			"apiVersion": "2020-05-01",
+			"type": "Microsoft.Network/routeTables",
+			"name": "ServerRoute",
+			"location": "[variables('location')]",
+			"properties": {
+				"routes": [
+					{
+						"name": "ServerRouteFirewall",
+						"properties": {
+							"addressPrefix": "0.0.0.0/0",
+							"nextHopType": "VirtualAppliance",
+							"nextHopIpAddress": "[variables('firewallPrivateIPAddress')]"
+						}
+					},
+					{
+						"name": "ServerToWorkerRouteFirewall",
+						"properties": {
+							"addressPrefix": "[variables('workerAddressSpace')]",
+							"nextHopType": "VirtualAppliance",
+							"nextHopIpAddress": "[variables('firewallPrivateIPAddress')]"
+						}
+					}
+				],
+				"disableBgpRoutePropagation": "false"
+			}
+		},
+		{
+			"apiVersion": "2020-05-01",
+			"type": "Microsoft.Network/networkSecurityGroups",
+			"name": "ServerNSG",
+			"location": "[variables('location')]",
+			"properties": {
+				"securityRules": []
+			}
+		},
+		{
+			"apiVersion": "2019-09-01",
+			"type": "Microsoft.Network/virtualNetworks",
+			"name": "DemoVnet",
+			"location": "[variables('location')]",
+			"dependsOn": [
+				"[resourceId('Microsoft.Network/routeTables', 'WorkerRoute')]",
+				"[resourceId('Microsoft.Network/networkSecurityGroups', 'WorkerNSG')]",
+				"[resourceId('Microsoft.Network/routeTables', 'ServerRoute')]",
+				"[resourceId('Microsoft.Network/networkSecurityGroups', 'ServerNSG')]"
+			],
+			"properties": {
+				"addressSpace": {
+					"addressPrefixes": [
+						"[variables('vnetAddressSpace')]"
+					]
+				},
+				"subnets": [
+					{
+						"name": "AzureFirewallSubnet",
+						"properties": {
+							"addressPrefix": "[variables('firewallAddressSpace')]"
+						}
+					},
+					{
+						"name": "WorkerSubnet",
+						"properties": {
+							"addressPrefix": "[variables('workerAddressSpace')]",
+							"networkSecurityGroup": {
+								"id": "[resourceId('Microsoft.Network/networkSecurityGroups', 'WorkerNSG')]"
+							},
+							"routeTable": {
+								"id": "[resourceId('Microsoft.Network/routeTables', 'WorkerRoute')]"
+							}
+						}
+					},
+					{
+						"name": "ServerSubnet",
+						"properties": {
+							"addressPrefix": "[variables('serverAddressSpace')]",
+							"networkSecurityGroup": {
+								"id": "[resourceId('Microsoft.Network/networkSecurityGroups', 'ServerNSG')]"
+							},
+							"routeTable": {
+								"id": "[resourceId('Microsoft.Network/routeTables', 'ServerRoute')]"
+							}
+						}
+					}
+				]
+			}
+		},
+		{
+			"apiVersion": "2019-02-01",
+			"type": "Microsoft.Network/publicIpAddresses",
+			"name": "WorkerPublicIP",
+			"location": "[variables('location')]",
+			"sku": {
+				"name": "Standard"
+			},
+			"properties": {
+				"publicIPAllocationMethod": "Static"
+			}
+		},
+		{
+			"apiVersion": "2019-12-01",
+			"type": "Microsoft.Network/networkInterfaces",
+			"name": "WorkerNIC",
+			"location": "[variables('location')]",
+			"dependsOn": [
+				"[resourceId('Microsoft.Network/virtualNetworks', 'DemoVnet')]",
+				"[resourceId('Microsoft.Network/publicIpAddresses', 'WorkerPublicIP')]",
+				"[resourceId('Microsoft.Network/networkSecurityGroups', 'WorkerNSG')]"
+			],
+			"properties": {
+				"ipConfigurations": [
+					{
+						"name": "WorkerIPConfiguration",
+						"properties": {
+							"subnet": {
+								"id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', 'DemoVnet', 'WorkerSubnet')]"
+							},
+							"privateIPAllocationMethod": "Static",
+							"privateIPAddress": "[variables('workerPrivateIPAddress')]",
+							"publicIPAddress": {
+								"id": "[resourceId('Microsoft.Network/publicIPAddresses', 'WorkerPublicIP')]"
+							}
+						}
+					}
+				],
+				"networkSecurityGroup": {
+					"id": "[resourceId('Microsoft.Network/networkSecurityGroups', 'WorkerNSG')]"
+				}
+			}
+		},
+		{
+			"name": "WorkerVM",
+			"type": "Microsoft.Compute/virtualMachines",
+			"apiVersion": "2019-03-01",
+			"location": "[variables('location')]",
+			"dependsOn": [
+				"[resourceId('Microsoft.Network/networkInterfaces', 'WorkerNIC')]"
+			],
+			"properties": {
+				"hardwareProfile": {
+					"vmSize": "[parameters('vmSize')]"
+				},
+				"storageProfile": {
+					"imageReference": {
+                        "publisher": "MicrosoftWindowsDesktop",
+                        "offer": "Windows-10",
+                        "sku": "20h1-pro",
+                        "version": "latest"
+                    },
+					"osDisk": {
+						"createOption": "FromImage"
+					}
+				},
+				"osProfile": {
+					"computerName": "WorkerVM",
+					"adminUsername": "[parameters('remoteAccessUsername')]",
+					"adminPassword": "[parameters('remoteAccessPassword')]"
+				},
+				"networkProfile": {
+					"networkInterfaces": [
+						{
+							"id": "[resourceId('Microsoft.Network/networkInterfaces', 'WorkerNIC')]"
+						}
+					]
+				}
+			}
+		},
+		{
+			"apiVersion": "2019-12-01",
+			"type": "Microsoft.Network/networkInterfaces",
+			"name": "ServerNIC",
+			"location": "[variables('location')]",
+			"dependsOn": [
+				"[resourceId('Microsoft.Network/virtualNetworks', 'DemoVnet')]",
+				"[resourceId('Microsoft.Network/networkSecurityGroups', 'ServerNSG')]"
+			],
+			"properties": {
+				"ipConfigurations": [
+					{
+						"name": "ServerIPConfiguration",
+						"properties": {
+							"subnet": {
+								"id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', 'DemoVnet', 'ServerSubnet')]"
+							},
+							"privateIPAllocationMethod": "Static",
+							"privateIPAddress": "[variables('serverPrivateIPAddress')]"
+						}
+					}
+				],
+				"networkSecurityGroup": {
+					"id": "[resourceId('Microsoft.Network/networkSecurityGroups', 'ServerNSG')]"
+				}
+			}
+		},
+		{
+			"name": "ServerVM",
+			"type": "Microsoft.Compute/virtualMachines",
+			"apiVersion": "2019-03-01",
+			"location": "[variables('location')]",
+			"dependsOn": [
+				"[resourceId('Microsoft.Network/networkInterfaces', 'ServerNIC')]",
+				"[resourceId('Microsoft.Network/azureFirewalls', 'DemoFirewall')]"
+			],
+			"properties": {
+				"hardwareProfile": {
+					"vmSize": "[parameters('vmSize')]"
+				},
+				"storageProfile": {
+					"imageReference": {
+						"publisher": "Canonical",
+						"offer": "UbuntuServer",
+						"sku": "18.04-LTS",
+						"version": "latest"
+					},
+					"osDisk": {
+						"createOption": "FromImage"
+					}
+				},
+				"osProfile": {
+					"computerName": "ServerVM",
+					"adminUsername": "[parameters('remoteAccessUsername')]",
+					"adminPassword": "[parameters('remoteAccessPassword')]"
+				},
+				"networkProfile": {
+					"networkInterfaces": [
+						{
+							"id": "[resourceId('Microsoft.Network/networkInterfaces', 'ServerNIC')]"
+						}
+					]
+				}
+			}
+		},
+		{
+			"name": "ServerVM/Installer",
+			"type": "Microsoft.Compute/virtualMachines/extensions",
+			"apiVersion": "2019-12-01",
+			"location": "[variables('location')]",
+			"dependsOn": [
+				"[resourceId('Microsoft.Compute/virtualMachines', 'ServerVM')]",
+				"[resourceId('Microsoft.Network/firewallPolicies/ruleCollectionGroups', 'DemoFirewallPolicy', 'ServiceRules')]"
+			],
+			"properties": {
+				"publisher": "Microsoft.Azure.Extensions",
+				"type": "CustomScript",
+				"typeHandlerVersion": "2.1",
+				"autoUpgradeMinorVersion": true,
+				"settings": {
+					"script": "IyEvYmluL3NoCgpjdXJsIC1mc1NMIC1vIGluc3RhbGwudGFyLmd6ICJodHRwczovLzIwMjBwcml2YXRlcHJldmlldzAuYmxvYi5jb3JlLndpbmRvd3MubmV0L3NlcnZlci9pbnN0YWxsLnRhci5nej9zcD1yJnN0PTIwMjAtMDktMDdUMTU6MDA6MzhaJnNlPTIwMjEtMDktMDdUMjM6MDA6MzhaJnNwcj1odHRwcyZzdj0yMDE5LTEyLTEyJnNyPWImc2lnPUcwM0tGaUZHdjlSRXFVNVdCT3p3U1JqRE1qYm9TUjglMkJmJTJGNU5GRUhTdVprJTNEIgp0YXIgeHp2ZiBpbnN0YWxsLnRhci5negoKKAoJY2QgaW5zdGFsbCAmJiAuL2luc3RhbGwuc2gKKQo=",
+					"skipDos2Unix": true
+				}
+			}
+		},
+		{
+			"apiVersion": "2019-02-01",
+			"type": "Microsoft.Network/publicIpAddresses",
+			"name": "FirewallPublicIP",
+			"location": "[variables('location')]",
+			"sku": {
+				"name": "Standard"
+			},
+			"properties": {
+				"publicIPAllocationMethod": "Static"
+			}
+		},
+		{
+			"apiVersion": "2020-05-01",
+			"type": "Microsoft.Network/azureFirewalls",
+			"name": "DemoFirewall",
+			"location": "[variables('location')]",
+			"dependsOn": [
+				"[resourceId('Microsoft.Network/virtualNetworks', 'DemoVnet')]",
+				"[resourceId('Microsoft.Network/publicIpAddresses', 'FirewallPublicIP')]",
+				"[resourceId('Microsoft.Network/firewallPolicies', 'DemoFirewallPolicy')]"
+			],
+			"properties": {
+				"ipConfigurations": [
+					{
+						"name": "FirewallIPConfiguration",
+						"properties": {
+							"subnet": {
+								"id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', 'DemoVnet', 'AzureFirewallSubnet')]"
+							},
+							"publicIPAddress": {
+								"id": "[resourceId('Microsoft.Network/publicIPAddresses', 'FirewallPublicIP')]"
+							}
+						}
+					}
+				],
+				"firewallPolicy":{
+					"id": "[resourceId('Microsoft.Network/firewallPolicies', 'DemoFirewallPolicy')]"
+				},
+				"sku": {
+					"name": "AZFW_VNet",
+					"tier": "Premium"
+				}
+			}
+		},
+		{
+			"apiVersion": "2020-05-01",
+			"type": "Microsoft.Network/firewallPolicies",
+			"name": "DemoFirewallPolicy",
+			"location": "[variables('policyLocation')]",
+			"dependsOn": [
+				"[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'DemoIdentity')]"
+			],
+			"properties": {
+				"sku": {"tier": "Premium"}	
+			},
+			"resources": [
+                {
+                    "apiVersion": "2020-05-01",
+                    "type": "ruleCollectionGroups",
+                    "name": "ServiceRules",
+                    "location": "[variables('policyLocation')]",
+                    "dependsOn": [
+                        "[resourceId('Microsoft.Network/firewallPolicies', 'DemoFirewallPolicy')]"
+                    ],
+                    "properties": {
+                        "priority": 100,
+                        "ruleCollections": [
+                            {
+                                "name": "AllowServices",
+                                "priority": 101,
+                                "ruleCollectionType": "FirewallPolicyFilterRuleCollection",
+                                "action": {
+                                    "type": "Allow"
+                                },
+                                "rules": [
+                                    {
+										"ruleType": "NetworkRule",
+										"name": "AllowStorage",
+										"ipProtocols": [
+											"Any"
+										],
+										"sourceAddresses": [
+											"*"
+										],
+										"sourceIpGroups": [],
+										"destinationAddresses": [
+											"Storage"
+										],
+										"destinationPorts": [
+											"*"
+										]
+									}
+                                ]
+                            }
+                        ]
+                    }
+                }
+            ],
+			"identity": {
+				"type": "UserAssigned",
+				"userAssignedIdentities": {
+					"[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'DemoIdentity')]": {}
+				}
+			}
+		},
+		{
+			"type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+			"name": "DemoIdentity",
+			"apiVersion": "2018-11-30",
+			"location": "[variables('location')]"
+		},
+		{
+			"apiVersion": "2018-02-14",
+			"type": "Microsoft.KeyVault/vaults",
+			"name": "[variables('keyVaultName')]",
+			"location": "[variables('location')]",
+			"dependsOn": [
+				"[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'DemoIdentity')]"
+			],
+			"properties": {
+				"enabledForDeployment": false,
+				"enabledForDiskEncryption": false,
+				"enabledForTemplateDeployment": false,
+				"tenantId": "[subscription().tenantId]",
+				"accessPolicies": [
+					{
+						"objectId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'DemoIdentity'), '2018-11-30').principalId]",
+						"tenantId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'DemoIdentity'), '2018-11-30').tenantId]",
+						"permissions": {
+							"secrets": ["get", "list"]
+						}
+					}
+				],
+				"sku": {
+					"name": "Standard",
+					"family": "A"
+				}
+			}
+		}
+    ]
+}	

@@ -1,0 +1,30 @@
+{
+	"$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+        "caCertificate": {
+            "type": "string",
+            "metadata": {
+                "description": "CA Certificate for TLS termination"
+            }
+        }
+	},
+	"variables": {
+		"keyVaultName": "[concat('fw-premium-', uniqueString(resourceGroup().id))]",
+        "keyVaultSecretName": "cacert",
+        "keyVaultSecretId": "[concat('https://', variables('keyVaultName'), '.vault.azure.net/secrets/', variables('keyVaultSecretName'))]",
+		"location": "[resourceGroup().location]",
+		"policyLocation": "[variables('location')]"
+	},
+	"resources": [
+        {
+            "apiVersion": "2018-02-14",
+            "type": "Microsoft.KeyVault/vaults/secrets",
+            "name": "[concat(variables('keyVaultName'), '/', variables('keyVaultSecretName'))]",
+            "location": "[variables('location')]",
+            "properties": {
+                "value": "[parameters('caCertificate')]"
+            }
+        }
+    ]
+}

@@ -1,0 +1,132 @@
+{
+	"$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+	},
+	"variables": {
+		"keyVaultName": "[concat('fw-premium-', uniqueString(resourceGroup().id))]",
+		"keyVaultSecretName": "cacert",
+		"keyVaultSecretId": "[concat('https://', variables('keyVaultName'), '.vault.azure.net/secrets/', variables('keyVaultSecretName'))]",
+		"location": "[resourceGroup().location]",
+		"policyLocation": "[variables('location')]"
+	},
+	"resources": [
+		{
+			"apiVersion": "2020-05-01",
+			"type": "Microsoft.Network/firewallPolicies",
+			"name": "DemoFirewallPolicy",
+			"location": "[variables('policyLocation')]",
+			"properties": {
+				"sku": {"tier": "Premium"},
+				"transportSecurity": {
+					"certificateAuthority": {
+						"name": "[variables('keyVaultSecretName')]",
+						"keyVaultSecretId": "[variables('keyVaultSecretId')]"
+					}
+				},
+				"intrusionDetection": {
+					"mode": "Alert",
+					"configuration": {
+						"signatureOverrides": [ 
+							{ 
+								"id": "2024897", 
+								"mode": "Deny" 
+							}, 
+							{ 
+								"id": "2024898", 
+								"mode": "Alert" 
+							} 
+						],
+						"bypassTrafficSettings": [
+							{
+								"name": "MyRule",
+								"protocol": "TCP",
+								"sourceAddresses": [
+									"10.0.10.10",
+									"10.0.10.11"
+								], 
+								"destinationAddresses": [
+									"1.1.1.1" 
+								], 
+								"destinationPorts": [
+									"80" 
+								]
+							}
+						]
+					}
+				}
+			},
+			"resources": [
+				{
+					"apiVersion": "2020-05-01",
+					"type": "ruleCollectionGroups",
+					"name": "PolicyRules",
+					"location": "[variables('policyLocation')]",
+					"dependsOn": [
+						"[resourceId('Microsoft.Network/firewallPolicies', 'DemoFirewallPolicy')]"
+					],
+					"properties": {
+						"priority": 200,
+						"ruleCollections": [
+							{
+								"name": "AllowApplication",
+								"priority": 101,
+								"ruleCollectionType": "FirewallPolicyFilterRuleCollection",
+								"action": {
+									"type": "Allow"
+								},
+								"rules": [
+									{ 
+										"ruleType": "ApplicationRule", 
+										"name": "AllowWeb", 
+										"protocols":[ 
+											{ 
+												"protocolType":"Https", 
+												"port":443 
+											}
+										],
+										"targetUrls":[ 
+											"*google.com/maps*",
+											"www.microsoft.com/en-us/surface/devices/surface-duo"
+										],
+										"sourceAddresses":[ 
+											"*"
+										],
+										"terminateTLS":true 
+									},
+									{
+										"ruleType": "ApplicationRule",
+										"name": "AllowDemo",
+										"protocols": [
+											{
+												"protocolType": "Https",
+												"port": 443
+											},
+											{
+												"protocolType": "Http",
+												"port": 80
+											}
+										],
+										"targetUrls": [
+											"server.2020-private-preview.com"
+										],
+										"sourceAddresses": [
+											"*"
+										],
+										"terminateTLS": true
+									}
+								]
+							}
+						]
+					}
+				}
+			],
+			"identity": {
+				"type": "UserAssigned",
+				"userAssignedIdentities": {
+					"[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'DemoIdentity')]": {}
+				}
+			}
+		}
+	]
+}
