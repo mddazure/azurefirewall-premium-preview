@@ -6,7 +6,9 @@
 	"variables": {
 		"keyVaultName": "[concat('fw-premium-', uniqueString(resourceGroup().id))]",
 		"keyVaultSecretName": "cacert",
+		"keyVaultCertName": "intermediateCA",
 		"keyVaultSecretId": "[concat('https://', variables('keyVaultName'), '.vault.azure.net/secrets/', variables('keyVaultSecretName'))]",
+		"keyVaultCertId": "[concat('https://', variables('keyVaultName'), '.vault.azure.net/secrets/', variables('keyVaultCertName'))]",
 		"location": "[resourceGroup().location]",
 		"policyLocation": "[variables('location')]"
 	},
@@ -21,7 +23,7 @@
 				"transportSecurity": {
 					"certificateAuthority": {
 						"name": "[variables('keyVaultSecretName')]",
-						"keyVaultSecretId": "[variables('keyVaultSecretId')]"
+						"keyVaultSecretId": "[variables('keyVaultCertId')]"
 					}
 				},
 				"intrusionDetection": {
@@ -29,9 +31,18 @@
 					"configuration": {
 						"signatureOverrides": [ 
 							{ 
-								"id": "2024897", 
+								"id": "2024897",
 								"mode": "Deny" 
 							}, 
+							{
+								"id": "2008983", //Blacksun user agent
+								"mode": "Deny"
+
+							},
+							{
+								"id": "2033051", //DNS worldhomeoutlet.com
+								"mode": "Deny"
+							},
 							{ 
 								"id": "2024898", 
 								"mode": "Alert" 
@@ -54,13 +65,13 @@
 							}
 						]
 					}
-				}
+				}				
 			},
 			"resources": [
 				{
 					"apiVersion": "2020-05-01",
 					"type": "ruleCollectionGroups",
-					"name": "PolicyRules",
+					"name": "DemoPolicyRuleCollectionGroup",
 					"location": "[variables('policyLocation')]",
 					"dependsOn": [
 						"[resourceId('Microsoft.Network/firewallPolicies', 'DemoFirewallPolicy')]"
@@ -69,8 +80,75 @@
 						"priority": 200,
 						"ruleCollections": [
 							{
+								"name": "AllowNetwork",
+								"priority": 120,
+								"ruleCollectionType": "FirewallPolicyFilterRuleCollection",
+								"action": {
+									"type": "Allow"
+								},
+								"rules":[
+									{
+										"ruleType": "NetworkRule",
+										"name":"AllowDNS",
+										"ipProtocols": [
+										"TCP",
+										"UDP"
+										],
+										"destinationAddresses": [
+										"8.8.8.8"
+										],
+										"destinationIpGroups": [],
+                                		"destinationFqdns": [],
+                                		"destinationPorts": [
+                                    	"53"
+                                		],
+										"sourceAddresses": [
+											"*"
+										],
+										"sourceIpGroups": []
+									}
+								]
+							},
+							{
+								"name": "DenyApplication",
+								"priority": 150,
+								"ruleCollectionType": "FirewallPolicyFilterRuleCollection",
+								"action": {
+									"type": "Deny"
+								},
+								"rules": [
+																		{
+										"ruleType": "ApplicationRule",
+										"name": "DenyWebCategories",
+										"protocols": [
+											{
+												"protocolType": "Https",
+												"port": 443
+											},
+											{
+												"protocolType": "Http",
+												"port": 80
+											}
+										],
+					                    "fqdnTags": [],
+                                		"webCategories": [
+											"Weapons"
+										],
+                                		"targetUrls":[],
+										"targetFqdns": [],
+										"sourceAddresses": [
+											"*"
+										],
+                               			"destinationAddresses": [],
+                                		"sourceIpGroups": [],
+										"terminateTLS": true
+									}									
+								]							
+							},
+														
+							{
 								"name": "AllowApplication",
-								"priority": 101,
+								"priority": 200,
 								"ruleCollectionType": "FirewallPolicyFilterRuleCollection",
 								"action": {
 									"type": "Allow"
@@ -85,18 +163,24 @@
 												"port":443 
 											}
 										],
+					                    "fqdnTags": [],
+                                		"webCategories": [],
+                                		"targetFqdns": [],
 										"targetUrls":[ 
-											"*google.com/maps*",
-											"www.microsoft.com/en-us/surface/devices/surface-duo"
+											"www.colt.com/*",
+											"www.microsoft.com/en-us/surface/devices/surface-duo",
+											"azfw-premium-app.azurewebsites.net/index.html"
 										],
 										"sourceAddresses":[ 
 											"*"
 										],
+                               			"destinationAddresses": [],
+                                		"sourceIpGroups": [],
 										"terminateTLS":true 
 									},
 									{
 										"ruleType": "ApplicationRule",
-										"name": "AllowDemo",
+										"name": "AllowDemoServer",
 										"protocols": [
 											{
 												"protocolType": "Https",
@@ -107,19 +191,25 @@
 												"port": 80
 											}
 										],
-										"targetUrls": [
-											"server.2020-private-preview.com"
+					                    "fqdnTags": [],
+                                		"webCategories": [],
+                                		"targetUrls":[],
+										"targetFqdns": [
+											"server.2020-private-preview.com",
+											"azfw-premium-app.azurewebsites.net"
 										],
 										"sourceAddresses": [
 											"*"
 										],
+                               			"destinationAddresses": [],
+                                		"sourceIpGroups": [],
 										"terminateTLS": true
 									}
-								]
+							]
 							}
 						]
 					}
-				}
+				}				
 			],
 			"identity": {
 				"type": "UserAssigned",
