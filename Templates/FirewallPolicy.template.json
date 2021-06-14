@@ -79,6 +79,56 @@
 					"properties": {
 						"priority": 200,
 						"ruleCollections": [
+                    {
+                        "ruleCollectionType": "FirewallPolicyNatRuleCollection",
+                        "name": "DNATRuleCollection",
+                        "priority": 110,
+                        "action": {
+                            "type": "Dnat"
+                        },
+                        "rules": [
+                            {
+                                "ruleType": "NatRule",
+                                "name": "Inbound",
+                                "translatedFqdn": "server.2020-private-preview.com",
+                                "translatedPort": "80",
+                                "ipProtocols": [
+                                    "TCP"
+                                ],
+                                "sourceAddresses": [
+                                    "*"
+                                ],
+                                "sourceIpGroups": [],
+                                "destinationAddresses": [
+                                    "20.61.254.73"
+                                ],
+                                "destinationPorts": [
+                                    "80"
+                                ]
+                            },
+                            {
+                                "ruleType": "NatRule",
+                                "name": "InboundTo443",
+                                "translatedFqdn": "server.2020-private-preview.com",
+                                "translatedPort": "443",
+                                "ipProtocols": [
+                                    "TCP"
+                                ],
+                                "sourceAddresses": [
+                                    "*"
+                                ],
+                                "sourceIpGroups": [],
+                                "destinationAddresses": [
+                                    "20.61.254.73"
+                                ],
+                                "destinationPorts": [
+                                    "8443"
+                                ]
+                            }
+	                        ]
+
+                   			},
+
 							{
 								"name": "AllowNetwork",
 								"priority": 120,
@@ -185,10 +235,6 @@
 											{
 												"protocolType": "Https",
 												"port": 443
-											},
-											{
-												"protocolType": "Http",
-												"port": 80
 											}
 										],
 					                    "fqdnTags": [],
