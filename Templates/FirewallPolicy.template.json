@@ -100,7 +100,7 @@
                                 ],
                                 "sourceIpGroups": [],
                                 "destinationAddresses": [
-                                    "20.61.254.73"
+                                    "20.23.48.158"
                                 ],
                                 "destinationPorts": [
                                     "80"
@@ -119,7 +119,7 @@
                                 ],
                                 "sourceIpGroups": [],
                                 "destinationAddresses": [
-                                    "20.61.254.73"
+                                    "20.23.48.158"
                                 ],
                                 "destinationPorts": [
                                     "8443"

@@ -22,5 +22,13 @@ premium firewall preview in spoke to spoke topology
 
 Refer to the pdf document in this repo for deployment instructions.
 
+Hints:
+- Key Vault
+  -  Import interCA.pfx from the Certificates folder in this repo as a new Certificate and name it "intermediateCA".
+  -  Access Policies: ensure an AAD user-assigned identity named DemoIdentity exists and is granted Get, List permissions on Secret and Certificate.
+- Firewall policy
+  - After deployment of the firewall completes, copy its public IP address. In FirewallPoloicy.template.json, under ruletype:"NATRule", find and replace "destinationAddresses" with firewall public IP address (two entries).
+ 
+
 
 
